@@ -10,4 +10,4 @@ sudo apt install python3-gi python3-gi-cairo python3-pygame
 
 Screenshot:
 
-TODO
+![Wireless Explorer](screenshot.jpg)
