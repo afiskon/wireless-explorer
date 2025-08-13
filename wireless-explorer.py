@@ -341,8 +341,8 @@ class WirelessExplorer:
 
     def create_channels_table(self):
         """Creates scrollable channel table"""
-        # Create data model: BSSID, SSID, Channel, Frequency, Bandwidth, Signal
-        liststore = Gtk.ListStore(str, str, str, str, str, str)
+        # Create data model: BSSID, SSID, Encryption, Channel, Frequency, Bandwidth, Signal
+        liststore = Gtk.ListStore(str, str, str, str, str, str, str)
 
         # Create TreeView
         treeview = Gtk.TreeView(model=liststore)
@@ -364,30 +364,37 @@ class WirelessExplorer:
         column_ssid.set_min_width(150)
         treeview.append_column(column_ssid)
 
+        # Encryption
+        renderer_text = Gtk.CellRendererText()
+        column_encryption = Gtk.TreeViewColumn("Encryption", renderer_text, text=2)
+        column_encryption.set_resizable(True)
+        column_encryption.set_min_width(100)
+        treeview.append_column(column_encryption)
+
         # Channel
         renderer_text = Gtk.CellRendererText()
-        column_channel = Gtk.TreeViewColumn("Channel", renderer_text, text=2)
+        column_channel = Gtk.TreeViewColumn("Channel", renderer_text, text=3)
         column_channel.set_resizable(True)
         column_channel.set_min_width(80)
         treeview.append_column(column_channel)
 
         # Frequency
         renderer_text = Gtk.CellRendererText()
-        column_frequency = Gtk.TreeViewColumn("Frequency", renderer_text, text=3)
+        column_frequency = Gtk.TreeViewColumn("Frequency", renderer_text, text=4)
         column_frequency.set_resizable(True)
         column_frequency.set_min_width(100)
         treeview.append_column(column_frequency)
 
         # Bandwidth
         renderer_text = Gtk.CellRendererText()
-        column_bw = Gtk.TreeViewColumn("Bandwidth", renderer_text, text=4)
+        column_bw = Gtk.TreeViewColumn("Bandwidth", renderer_text, text=5)
         column_bw.set_resizable(True)
         column_bw.set_min_width(80)
         treeview.append_column(column_bw)
 
         # Signal
         renderer_text = Gtk.CellRendererText()
-        column_signal = Gtk.TreeViewColumn("Signal", renderer_text, text=5)
+        column_signal = Gtk.TreeViewColumn("Signal", renderer_text, text=6)
         column_signal.set_resizable(True)
         column_signal.set_min_width(80)
         treeview.append_column(column_signal)
@@ -724,13 +731,17 @@ class WirelessExplorer:
 
             frequency = freq_match.group(1).strip() if freq_match else '0'
 
+            # Parse encryption information
+            encryption = self.parse_encryption(block)
+
             network = {
                 'bssid': bssid_match.group(1) if bssid_match else '?',
                 'ssid': ssid_match.group(1).strip() if ssid_match else '(hidden)',
                 'channel': channel_match.group(1) if channel_match else '?',
                 'frequency': frequency,
                 'bandwidth': bw_match.group(1) if bw_match else '20',
-                'signal': signal_match.group(1) if signal_match else '-130'
+                'signal': signal_match.group(1) if signal_match else '-130',
+                'encryption': encryption
             }
 
             if network['bandwidth'] == '0':
@@ -743,6 +754,48 @@ class WirelessExplorer:
             networks.append(network)
 
         return networks
+
+    def parse_encryption(self, block):
+        """Parse encryption type from BSS block"""
+        # Check if it's an open network
+        if 'Privacy:' in block:
+            privacy_match = re.search(r'Privacy:\s*(\w+)', block)
+            if privacy_match and privacy_match.group(1).lower() == 'no':
+                return 'Open'
+
+        # Check for WPA3
+        if re.search(r'RSN.*Version: 1.*Group cipher: CCMP.*Pairwise ciphers: CCMP.*Authentication suites: SAE', block, re.DOTALL):
+            return 'WPA3'
+        elif 'SAE' in block:
+            return 'WPA3'
+
+        # Check for WPA2
+        if re.search(r'RSN.*Version: 1', block, re.DOTALL):
+            if 'PSK' in block:
+                return 'WPA2-PSK'
+            elif '802.1X' in block:
+                return 'WPA2-Enterprise'
+            else:
+                return 'WPA2'
+
+        # Check for WPA
+        if re.search(r'WPA.*Version: 1', block, re.DOTALL):
+            if 'PSK' in block:
+                return 'WPA-PSK'
+            elif '802.1X' in block:
+                return 'WPA-Enterprise'
+            else:
+                return 'WPA'
+
+        # Check for WEP
+        if 'Privacy:' in block:
+            privacy_match = re.search(r'Privacy:\s*(\w+)', block)
+            if privacy_match and privacy_match.group(1).lower() == 'yes':
+                # If privacy is yes but no WPA/WPA2/WPA3, assume WEP
+                if not re.search(r'(RSN|WPA)', block):
+                    return 'WEP'
+
+        return 'Unknown'
 
     def _update_scan_results(self, networks):
         """Updates scan results in UI (called from main thread)"""
@@ -822,6 +875,7 @@ class WirelessExplorer:
             row_data = [
                 net['bssid'],
                 net['ssid'],
+                net['encryption'],
                 net['channel'],
                 net['frequency'],
                 net['bandwidth'],
